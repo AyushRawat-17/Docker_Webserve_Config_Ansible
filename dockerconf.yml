@@ -1,0 +1,75 @@
+- hosts: localhost
+  vars_files:
+  - ./varibles.yml
+ 
+  tasks:
+   - name: "Creating a directory for webserver"
+     file:
+        path: "/root/docker/"
+        state: directory
+
+   - name: "Copying website file to the host"
+     copy:
+        src: "{{webpage}}"
+        dest: "/root/docker/"
+       
+   - name: "Configuring Yum for Docker"
+     yum_repository:
+         name: "docker"
+         description: "docker.repo"
+         gpgcheck: no
+         baseurl: "https://download.docker.com/linux/centos/7/x86_64/stable/" 
+  
+   - name: "Installing Docker"
+     package:
+        name: "docker-ce-18.09.1-3.el7.x86_64"
+        state: present              
+           
+   - name: "Starting Docker Services"
+     service:
+        name: "docker"
+        state: started
+
+   - name: "Pulling Centos Server Image"
+     docker_image:
+         name: rawatayush17/centos_ssh:v2
+         source: pull
+
+   - firewalld:
+        port: 5000/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+   - name: "Launching Docker Container"
+     docker_container:
+        name: os
+        image: "rawatayush17/centos_ssh:v2"
+        ports:
+          - "5000:80"
+        state: started
+        interactive : yes
+        tty: yes
+        volumes: "/root/docker:/var/www/html"
+     register: docker
+
+   - debug:
+        var: docker.ansible_facts.docker_container.NetworkSettings.IPAddress    
+
+   - blockinfile:
+        path: /root/dockerserver/dockerinventory
+        block: |
+                [docker]
+                {{docker.ansible_facts.docker_container.NetworkSettings.IPAddress}} ansible_ssh_user=root ansible_ssh_pass=centos ansible_connection=ssh 
+   - name: "Refresing Inventory"
+     meta: refresh_inventory
+
+- hosts: docker
+  tasks: 
+        - name: Installing HTTPD on Container
+          package: 
+                name: "httpd"
+                state: present
+
+        - name: Starting httpd service
+          command: "/usr/sbin/httpd"
